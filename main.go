@@ -196,58 +196,17 @@ func AuthHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 // Update TranslateHandler
-// Update TranslateHandler to check machine registration
+// Direct translation without authentication or machine verification
 func TranslateHandler(w http.ResponseWriter, r *http.Request) {
-    // Extract and validate token
-    authHeader := r.Header.Get("Authorization")
-    if authHeader == "" || !strings.HasPrefix(authHeader, "Bearer ") {
-        sendErrorResponse(w, "Missing or invalid authorization header", http.StatusUnauthorized)
-        return
-    }
-
-    tokenString := strings.TrimPrefix(authHeader, "Bearer ")
-    username, err := validateToken(tokenString)
-    if err != nil {
-        sendErrorResponse(w, "Invalid token", http.StatusUnauthorized)
-        return
-    }
-
-    // Get client IP - improved IP extraction
-    clientIP := r.Header.Get("X-Real-IP")
-    if clientIP == "" {
-        clientIP = r.Header.Get("X-Forwarded-For")
-        if clientIP == "" {
-            // Remove port number from RemoteAddr if present
-            clientIP = strings.Split(r.RemoteAddr, ":")[0]
-        }
-    }
-
-    // Log the IP for debugging
-    log.Printf("Client IP attempting to translate: %s", clientIP)
-
-    // Check if machine is registered
-    err = checkMachineRegistration(username, clientIP)
-    if err != nil {
-        sendErrorResponse(w, fmt.Sprintf("Machine not registered. IP: %s", clientIP), http.StatusUnauthorized)
-        return
-    }
-
     if r.Method != http.MethodPost {
         http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
         return
     }
 
     var request TranslateRequest
-    err = json.NewDecoder(r.Body).Decode(&request)
+    err := json.NewDecoder(r.Body).Decode(&request)
     if err != nil {
         sendErrorResponse(w, "Invalid request payload", http.StatusBadRequest)
-        return
-    }
-
-    // Check translation limit
-    err = checkTranslationLimit(username)
-    if err != nil {
-        sendErrorResponse(w, err.Error(), http.StatusForbidden)
         return
     }
 
@@ -258,12 +217,6 @@ func TranslateHandler(w http.ResponseWriter, r *http.Request) {
     if err != nil {
         sendErrorResponse(w, "Translation failed", http.StatusInternalServerError)
         return
-    }
-
-    // Log translation usage
-    _, err = db.Exec("INSERT INTO translation_logs (username) VALUES (?)", username)
-    if err != nil {
-        log.Printf("Failed to log translation: %v", err)
     }
 
     response := TranslateResponse{
