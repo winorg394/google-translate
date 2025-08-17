@@ -76,7 +76,7 @@ func initDB() {
 		log.Fatal(err)
 	}
 
-	// Update translation_logs table
+	// Update translation_logs table d
 	createLogsTable := `
 	CREATE TABLE IF NOT EXISTS translation_logs (
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
