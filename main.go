@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 
@@ -204,9 +205,20 @@ func TranslateHandler(w http.ResponseWriter, r *http.Request) {
     }
 
     var request TranslateRequest
-    err := json.NewDecoder(r.Body).Decode(&request)
+    
+    // Read the body first to handle malformed JSON better
+    body, err := io.ReadAll(r.Body)
     if err != nil {
-        sendErrorResponse(w, "Invalid request payload", http.StatusBadRequest)
+        log.Printf("Failed to read request body: %v", err)
+        sendErrorResponse(w, "Failed to read request body", http.StatusBadRequest)
+        return
+    }
+    
+    // Validate and clean the JSON request
+    request, err = validateAndCleanJSONRequest(body)
+    if err != nil {
+        log.Printf("Request validation error: %v, Body: %s", err, string(body))
+        sendErrorResponse(w, fmt.Sprintf("Invalid request: %v", err), http.StatusBadRequest)
         return
     }
 
@@ -215,6 +227,7 @@ func TranslateHandler(w http.ResponseWriter, r *http.Request) {
         To:   request.To,
     })
     if err != nil {
+        log.Printf("Translation error: %v", err)
         sendErrorResponse(w, "Translation failed", http.StatusInternalServerError)
         return
     }
@@ -243,6 +256,54 @@ func sendJSONResponse(w http.ResponseWriter, data interface{}, statusCode int) {
 	if err != nil {
 		log.Printf("Failed to encode JSON response: %v", err)
 	}
+}
+
+// cleanTextForTranslation removes markdown formatting and normalizes whitespace
+func cleanTextForTranslation(text string) string {
+	// Remove markdown formatting
+	text = strings.ReplaceAll(text, "**", "")  // Remove bold markdown
+	text = strings.ReplaceAll(text, "*", "")   // Remove italic markdown
+	text = strings.ReplaceAll(text, "`", "")   // Remove code markdown
+	text = strings.ReplaceAll(text, "~~", "")  // Remove strikethrough markdown
+	
+	// Remove special quotes and replace with standard ones
+	text = strings.ReplaceAll(text, "\u201C", "\"")  // Left double quotation mark
+	text = strings.ReplaceAll(text, "\u201D", "\"")  // Right double quotation mark
+	text = strings.ReplaceAll(text, "\u2018", "'")   // Left single quotation mark
+	text = strings.ReplaceAll(text, "\u2019", "'")   // Right single quotation mark
+	
+	// Normalize whitespace: replace multiple spaces/tabs with single space
+	text = strings.Join(strings.Fields(text), " ")
+	
+	// Trim leading/trailing whitespace
+	text = strings.TrimSpace(text)
+	
+	return text
+}
+
+// validateAndCleanJSONRequest validates and cleans JSON request data
+func validateAndCleanJSONRequest(data []byte) (TranslateRequest, error) {
+	var request TranslateRequest
+	
+	// First try to unmarshal the raw JSON
+	err := json.Unmarshal(data, &request)
+	if err != nil {
+		return request, fmt.Errorf("JSON unmarshal failed: %v", err)
+	}
+	
+	// Validate required fields
+	if request.Text == "" {
+		return request, fmt.Errorf("text field is required")
+	}
+	
+	if request.To == "" {
+		return request, fmt.Errorf("to field is required")
+	}
+	
+	// Clean the text
+	request.Text = cleanTextForTranslation(request.Text)
+	
+	return request, nil
 }
 
 // Add this new type for usage statistics
